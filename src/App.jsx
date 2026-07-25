@@ -1,11 +1,11 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useContext, createContext } from "react";
 import {
   Upload, Copy, Download, Search, AlertTriangle, CheckCircle2,
-  GitMerge, Plus, Minus, RotateCcw, ChevronDown, ChevronRight, FileJson2
+  GitMerge, Plus, Minus, RotateCcw, ChevronDown, ChevronRight, FileJson2, Sun, Moon
 } from "lucide-react";
 
-// ---------- design tokens ----------
-const T = {
+// ---------- design tokens (dark + light) ----------
+const DARK = {
   bg: "#0D1113",
   panel: "#141A1D",
   panelAlt: "#1A2226",
@@ -25,6 +25,29 @@ const T = {
   mono: "ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, monospace",
   sans: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
 };
+
+const LIGHT = {
+  bg: "#F5F7F8",
+  panel: "#FFFFFF",
+  panelAlt: "#EDF1F3",
+  border: "#D7DEE3",
+  borderSoft: "#E4E9EC",
+  text: "#1B2427",
+  muted: "#5E6A72",
+  mutedDim: "#8B969D",
+  add: "#1E8E5A",
+  remove: "#C0392B",
+  warn: "#B4720A",
+  prod: "#127A93",
+  release2: "#6247C9",
+  jsonKey: "#0E7C90",
+  jsonStr: "#276B41",
+  jsonNum: "#A5680A",
+  mono: DARK.mono,
+  sans: DARK.sans,
+};
+
+const ThemeContext = createContext(DARK);
 
 // ---------- json flatten / unflatten ----------
 function flatten(obj, prefix = "", out = {}) {
@@ -95,24 +118,31 @@ function computeDiff(prod, nonProd) {
   }
 
   rows.sort((a, b) => a.key.localeCompare(b.key));
-
-  const merged = {};
-  for (const r of rows) {
-    if (r.hasResolved) merged[r.key] = r.resolvedVal;
-  }
-
-  return { rows, merged: unflatten(merged) };
+  return { rows };
 }
 
-// ---------- status meta ----------
+// ---------- status meta (theme-independent parts) ----------
 const STATUS_META = {
-  added: { label: "Added", color: T.add, icon: Plus },
-  removed: { label: "Removed (check first)", color: T.warn, icon: AlertTriangle },
-  "synced-from-prod": { label: "Using prod value", color: T.prod, icon: CheckCircle2 },
-  "kept-release2": { label: "Using release2 value", color: T.release2, icon: GitMerge },
-  "kept-removed": { label: "Restored (kept on prod)", color: T.warn, icon: CheckCircle2 },
-  unchanged: { label: "Unchanged", color: T.mutedDim, icon: CheckCircle2 },
+  added: { label: "Added", icon: Plus },
+  removed: { label: "Removed (check first)", icon: AlertTriangle },
+  "synced-from-prod": { label: "Using prod value", icon: CheckCircle2 },
+  "kept-release2": { label: "Using release2 value", icon: GitMerge },
+  "kept-removed": { label: "Restored (kept on prod)", icon: CheckCircle2 },
+  unchanged: { label: "Unchanged", icon: CheckCircle2 },
 };
+
+// color for a given status, resolved against the active theme
+function statusColor(status, T) {
+  const map = {
+    added: T.add,
+    removed: T.warn,
+    "synced-from-prod": T.prod,
+    "kept-release2": T.release2,
+    "kept-removed": T.warn,
+    unchanged: T.mutedDim,
+  };
+  return map[status];
+}
 
 // applies a manual override (if any) on top of the default prod-wins resolution for a row
 function resolveRow(r, overrides) {
@@ -159,6 +189,7 @@ const SAMPLE = {
 
 // ---------- JSON input panel ----------
 function JsonPanel({ label, accent, value, onChange, error }) {
+  const T = useContext(ThemeContext);
   const [open, setOpen] = useState(true);
   const fileRef = React.useRef(null);
 
@@ -246,18 +277,18 @@ function buildLines(node, keyLabel, keyPath, depth, isLastSibling, statusMap, ou
   }
 }
 
-function formatLeaf(value) {
+function formatLeaf(value, T) {
   if (value === undefined) return { text: "null", color: T.mutedDim };
   if (value === null) return { text: "null", color: T.mutedDim };
   if (typeof value === "string") return { text: `"${value}"`, color: T.jsonStr };
   return { text: String(value), color: T.jsonNum };
 }
 
-const STATUS_LINE_COLOR = { added: T.add, "synced-from-prod": T.prod, "kept-release2": T.release2, "kept-removed": T.warn };
 const STATUS_MARKER = { added: "+", "synced-from-prod": "~", "kept-release2": "≈", "kept-removed": "!" };
 
 function JsonLine({ entry }) {
-  const lineColor = STATUS_LINE_COLOR[entry.status];
+  const T = useContext(ThemeContext);
+  const lineColor = statusColor(entry.status, T);
   const marker = STATUS_MARKER[entry.status] || " ";
   let inner;
   if (entry.type === "open") {
@@ -274,7 +305,7 @@ function JsonLine({ entry }) {
   } else if (entry.type === "empty") {
     inner = <span style={{ color: T.mutedDim }}>// no keys</span>;
   } else {
-    const { text, color } = formatLeaf(entry.value);
+    const { text, color } = formatLeaf(entry.value, T);
     inner = (
       <>
         <span style={{ color: T.jsonKey }}>{`"${entry.key}"`}</span>
@@ -296,6 +327,7 @@ function JsonLine({ entry }) {
 }
 
 function HighlightedJson({ data, statusMap }) {
+  const T = useContext(ThemeContext);
   const lines = useMemo(() => {
     const out = [];
     buildLines(data, undefined, "", 0, true, statusMap, out);
@@ -309,6 +341,7 @@ function HighlightedJson({ data, statusMap }) {
 }
 
 function Toggle({ options, active, onChange }) {
+  const T = useContext(ThemeContext);
   return (
     <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
       {options.map((opt) => (
@@ -330,6 +363,7 @@ function Toggle({ options, active, onChange }) {
 }
 
 function Chip({ active, color, label, count, onClick }) {
+  const T = useContext(ThemeContext);
   return (
     <button
       onClick={onClick}
@@ -348,7 +382,8 @@ function Chip({ active, color, label, count, onClick }) {
   );
 }
 
-export default function TranslationMergeTool() {
+function TranslationMergeToolInner() {
+  const T = useContext(ThemeContext);
   const [prodText, setProdText] = useState("");
   const [nonProdText, setNonProdText] = useState("");
   const [errors, setErrors] = useState({});
@@ -404,33 +439,25 @@ export default function TranslationMergeTool() {
     });
   }, [result, filter, search]);
 
-  const mergedJsonStr = useMemo(() => {
-    if (!result) return "";
-    const flat = {};
-    for (const r of result.rows) {
-      const eff = resolveRow(r, overrides);
-      if (eff.hasResolved) flat[r.key] = eff.resolvedVal;
-    }
-    return JSON.stringify(unflatten(flat), null, 2);
-  }, [result, overrides]);
-
-  const mergedData = useMemo(() => {
+  const mergedFlat = useMemo(() => {
     if (!result) return {};
     const flat = {};
     for (const r of result.rows) {
       const eff = resolveRow(r, overrides);
       if (eff.hasResolved) flat[r.key] = eff.resolvedVal;
     }
-    return unflatten(flat);
+    return flat;
   }, [result, overrides]);
+
+  const mergedData = useMemo(() => unflatten(mergedFlat), [mergedFlat]);
+  const mergedJsonStr = useMemo(() => JSON.stringify(mergedData, null, 2), [mergedData]);
 
   const statusMap = useMemo(() => {
     if (!result) return {};
     const m = {};
     for (const r of result.rows) {
       const eff = resolveRow(r, overrides);
-      if (eff.effectiveStatus === "added" || eff.effectiveStatus === "synced-from-prod" ||
-          eff.effectiveStatus === "kept-release2" || eff.effectiveStatus === "kept-removed") {
+      if (["added", "synced-from-prod", "kept-release2", "kept-removed"].includes(eff.effectiveStatus)) {
         m[r.key] = eff.effectiveStatus;
       }
     }
@@ -463,21 +490,24 @@ export default function TranslationMergeTool() {
     }}>
       <div style={{ maxWidth: 960, margin: "0 auto" }}>
         {/* header */}
-        <div style={{ marginBottom: 18 }}>
-          <div style={{
-            display: "flex", alignItems: "center", gap: 8, color: T.prod,
-            fontSize: 11, letterSpacing: 1.2, textTransform: "uppercase", fontWeight: 600, marginBottom: 6,
-          }}>
-            <FileJson2 size={13} /> prod → release2 reconciliation
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 18 }}>
+          <div>
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8, color: T.prod,
+              fontSize: 11, letterSpacing: 1.2, textTransform: "uppercase", fontWeight: 600, marginBottom: 6,
+            }}>
+              <FileJson2 size={13} /> prod → release2 reconciliation
+            </div>
+            <h1 style={{ color: T.text, fontSize: 22, fontWeight: 650, margin: 0, letterSpacing: -0.2 }}>
+              Translation Merge Tool
+            </h1>
+            <p style={{ color: T.muted, fontSize: 13, margin: "6px 0 0", maxWidth: 600, lineHeight: 1.5 }}>
+              Two-way diff between live prod (PO edits values via admin — the source of truth for
+              content) and non-prod release2 (dev owns key structure: add/remove). Any value that
+              exists on both sides always takes prod's current value. Run once per locale (en, th).
+            </p>
           </div>
-          <h1 style={{ color: T.text, fontSize: 22, fontWeight: 650, margin: 0, letterSpacing: -0.2 }}>
-            Translation Merge Tool
-          </h1>
-          <p style={{ color: T.muted, fontSize: 13, margin: "6px 0 0", maxWidth: 620, lineHeight: 1.5 }}>
-            Two-way diff between live prod (PO edits values via admin — the source of truth for
-            content) and non-prod release2 (dev owns key structure: add/remove). Any value that
-            exists on both sides always takes prod's current value. Run once per locale (en, th).
-          </p>
+          <ThemeSwitch />
         </div>
 
         {/* inputs */}
@@ -529,7 +559,7 @@ export default function TranslationMergeTool() {
               {FILTERS.map((f) => {
                 const count = f.key === "all" ? result.rows.length : (counts[f.key] || 0);
                 if (f.key !== "all" && count === 0) return null;
-                const color = f.key === "all" ? T.text : STATUS_META[f.key]?.color || T.muted;
+                const color = f.key === "all" ? T.text : (statusColor(f.key, T) || T.muted);
                 return (
                   <Chip key={f.key} active={filter === f.key} color={color} label={f.label} count={count}
                     onClick={() => setFilter(f.key)} />
@@ -572,6 +602,7 @@ export default function TranslationMergeTool() {
                 {filteredRows.map((r, i) => {
                   const eff = resolveRow(r, overrides);
                   const meta = STATUS_META[eff.effectiveStatus] || STATUS_META.unchanged;
+                  const metaColor = statusColor(eff.effectiveStatus, T) || T.muted;
                   const Icon = meta.icon;
                   return (
                     <div key={r.key} style={{
@@ -589,7 +620,7 @@ export default function TranslationMergeTool() {
                         {fmtVal(r.nonProdVal)}
                       </div>
                       <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 5, color: meta.color, fontSize: 11, fontWeight: 600, marginBottom: r.note ? 2 : 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 5, color: metaColor, fontSize: 11, fontWeight: 600, marginBottom: r.note ? 2 : 0 }}>
                           <Icon size={11} /> {meta.label}
                         </div>
                         {r.note && (
@@ -597,7 +628,7 @@ export default function TranslationMergeTool() {
                         )}
                         {(r.status === "synced-from-prod" || r.status === "removed") && (
                           <div style={{
-                            color: meta.color, fontFamily: T.mono, fontSize: 10.5, marginTop: 4,
+                            color: metaColor, fontFamily: T.mono, fontSize: 10.5, marginTop: 4,
                             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                           }}>
                             → {eff.hasResolved ? fmtVal(eff.resolvedVal) : "(key dropped)"}
@@ -635,7 +666,7 @@ export default function TranslationMergeTool() {
               <button onClick={() => setMergedOpen(!mergedOpen)} style={{
                 width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px",
                 background: T.panelAlt, border: "none", cursor: "pointer",
-                borderBottom: mergedOpen ? `1px solid ${T.border}` : "none",
+                borderBottom: mergedOpen ? `1px solid ${T.border}` : "none", flexWrap: "wrap",
               }}>
                 <span style={{ color: T.text, fontSize: 13, fontWeight: 600 }}>Merged output (release2 → prod)</span>
                 <span style={{ display: "flex", alignItems: "center", gap: 10, marginLeft: 14, flexWrap: "wrap" }}>
@@ -684,5 +715,37 @@ export default function TranslationMergeTool() {
         )}
       </div>
     </div>
+  );
+}
+
+function ThemeSwitch() {
+  const T = useContext(ThemeContext);
+  const { mode, setMode } = useContext(ModeContext);
+  return (
+    <button
+      onClick={() => setMode(mode === "dark" ? "light" : "dark")}
+      style={{
+        display: "flex", alignItems: "center", gap: 6, background: T.panel,
+        border: `1px solid ${T.border}`, borderRadius: 999, padding: "6px 12px",
+        color: T.text, fontSize: 12, fontFamily: T.sans, cursor: "pointer", flexShrink: 0,
+      }}
+    >
+      {mode === "dark" ? <Moon size={13} /> : <Sun size={13} />}
+      {mode === "dark" ? "Dark" : "Light"}
+    </button>
+  );
+}
+
+const ModeContext = createContext({ mode: "dark", setMode: () => {} });
+
+export default function TranslationMergeTool() {
+  const [mode, setMode] = useState("dark");
+  const T = mode === "dark" ? DARK : LIGHT;
+  return (
+    <ModeContext.Provider value={{ mode, setMode }}>
+      <ThemeContext.Provider value={T}>
+        <TranslationMergeToolInner />
+      </ThemeContext.Provider>
+    </ModeContext.Provider>
   );
 }
